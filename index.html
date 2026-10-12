@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Object Identifier · Teachable Machine image classifier</title>
+  <meta name="description" content="Identify objects from an uploaded photo or a live camera using a Google Teachable Machine image model that runs in your browser.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <div class="header-text">
+        <h1>Object Identifier</h1>
+        <p class="tagline">Image classification with a Google Teachable Machine model, running in your browser.</p>
+      </div>
+
+      <div class="model-status" id="modelStatus" data-state="loading" role="status" aria-live="polite">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="modelStatusText">Loading model…</span>
+        <button type="button" id="retryLoad" class="link-btn" hidden>Retry</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="wrap">
+    <ol class="steps" aria-label="How to use this app">
+      <li>Upload a photo or open your camera.</li>
+      <li>Select <strong>Identify object</strong>.</li>
+      <li>Read the label, the confidence, and the score for every class.</li>
+    </ol>
+
+    <!-- Model loading + error banners -->
+    <div class="banner banner-info" id="modelLoading" role="status">
+      <span class="spinner" aria-hidden="true"></span>
+      <span>Loading the model. Identify buttons unlock when it is ready.</span>
+    </div>
+
+    <div class="banner banner-error" id="modelError" role="alert" hidden>
+      <strong>The model could not be loaded</strong>
+      <p id="modelErrorText"></p>
+      <details>
+        <summary>Troubleshooting checklist</summary>
+        <ul>
+          <li>Open the app through a local server (for example <code>http://localhost:8000</code>), not by double-clicking <code>index.html</code>.</li>
+          <li>Confirm <code>model.json</code>, <code>metadata.json</code> and <code>weights.bin</code> are in the folder set by <code>MODEL_URL</code> and <code>METADATA_URL</code> at the top of <code>script.js</code>.</li>
+          <li>Open the browser's developer tools, Network tab, reload, and look for red (404) requests.</li>
+          <li>Check your internet connection: the TensorFlow.js and Teachable Machine libraries load from a CDN.</li>
+        </ul>
+      </details>
+    </div>
+
+    <div class="layout">
+      <!-- INPUT -->
+      <section class="card" aria-labelledby="inputHeading">
+        <h2 id="inputHeading">Choose an input</h2>
+
+        <div class="tabs" role="tablist" aria-label="Input method">
+          <button type="button" role="tab" id="tabUpload" class="tab" aria-selected="true" aria-controls="panelUpload">Upload image</button>
+          <button type="button" role="tab" id="tabCamera" class="tab" aria-selected="false" aria-controls="panelCamera" tabindex="-1">Use camera</button>
+        </div>
+
+        <!-- Upload panel -->
+        <div id="panelUpload" class="panel" role="tabpanel" aria-labelledby="tabUpload">
+          <div class="drop" id="dropZone">
+            <input type="file" id="fileInput" class="visually-hidden" accept="image/jpeg,image/png,image/webp" aria-describedby="fileHint">
+            <label for="fileInput" class="drop-label" id="dropLabel">
+              <svg class="drop-icon" viewBox="0 0 24 24" width="40" height="40" aria-hidden="true" focusable="false">
+                <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M4 16.5V18a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1.5M12 15V4m0 0L8 8m4-4 4 4"/>
+              </svg>
+              <span class="drop-title">Drop an image here, or choose a file</span>
+              <span class="drop-hint" id="fileHint">JPG, JPEG, PNG or WEBP, up to 10 MB</span>
+            </label>
+          </div>
+
+          <figure class="stage preview-stage" id="previewStage" hidden>
+            <img id="previewImg" alt="Preview of the selected image">
+          </figure>
+
+          <p class="inline-error" id="uploadError" role="alert" hidden></p>
+
+          <div class="actions">
+            <button type="button" class="btn btn-secondary" id="chooseAnotherBtn" hidden>Select another image</button>
+            <button type="button" class="btn btn-ghost" id="clearBtn" hidden>Clear image</button>
+            <button type="button" class="btn btn-primary" id="identifyUploadBtn" disabled>Identify object</button>
+          </div>
+        </div>
+
+        <!-- Camera panel -->
+        <div id="panelCamera" class="panel" role="tabpanel" aria-labelledby="tabCamera" hidden>
+          <div class="field">
+            <label for="facingSelect">Camera</label>
+            <select id="facingSelect">
+              <option value="environment">Rear camera</option>
+              <option value="user">Front camera</option>
+            </select>
+          </div>
+
+          <div class="stage camera-stage" id="cameraStage">
+            <video id="video" playsinline muted autoplay aria-label="Live camera preview" hidden></video>
+            <canvas id="captureCanvas" aria-label="Captured frame" hidden></canvas>
+            <div class="camera-placeholder" id="cameraPlaceholder">
+              <svg viewBox="0 0 24 24" width="40" height="40" aria-hidden="true" focusable="false">
+                <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M4 8a2 2 0 0 1 2-2h1.5l1-1.5h7L16.5 6H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8Z"/>
+                <circle cx="12" cy="12.5" r="3.2" fill="none" stroke="currentColor" stroke-width="1.6"/>
+              </svg>
+              <span id="cameraPlaceholderText">The camera is off. Select <strong>Start camera</strong> and allow access when your browser asks.</span>
+            </div>
+          </div>
+
+          <p class="inline-error" id="cameraError" role="alert" hidden></p>
+
+          <div class="actions">
+            <button type="button" class="btn btn-secondary" id="startCameraBtn">Start camera</button>
+            <button type="button" class="btn btn-secondary" id="captureBtn" disabled>Capture</button>
+            <button type="button" class="btn btn-primary" id="identifyCameraBtn" disabled>Identify object</button>
+            <button type="button" class="btn btn-ghost" id="stopCameraBtn" disabled>Stop camera</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- RESULTS -->
+      <section class="card results" aria-labelledby="resultsHeading">
+        <h2 id="resultsHeading">Result</h2>
+
+        <div id="resultLive" aria-live="polite">
+          <!-- Empty -->
+          <div class="state state-empty" id="stateEmpty">
+            <p class="state-title">No result yet</p>
+            <p>Add an image or capture a camera frame, then select <strong>Identify object</strong>.</p>
+          </div>
+
+          <!-- Processing -->
+          <div class="state state-processing" id="stateProcessing" hidden>
+            <span class="spinner spinner-lg" aria-hidden="true"></span>
+            <p class="state-title">Identifying…</p>
+          </div>
+
+          <!-- Error -->
+          <div class="state state-error" id="stateError" hidden>
+            <p class="state-title">Prediction failed</p>
+            <p id="stateErrorText"></p>
+          </div>
+
+          <!-- Success / uncertain -->
+          <div class="outcome" id="outcome" hidden>
+            <p class="badge" id="outcomeBadge"></p>
+            <p class="outcome-label" id="outcomeLabel"></p>
+            <p class="outcome-detail" id="outcomeDetail"></p>
+
+            <h3 class="scores-heading">Confidence for every class</h3>
+            <ul class="bars" id="bars"></ul>
+          </div>
+        </div>
+
+        <div class="threshold">
+          <div class="threshold-head">
+            <label for="thresholdRange">Confidence threshold</label>
+            <output id="thresholdOutput" for="thresholdRange">80%</output>
+          </div>
+          <input type="range" id="thresholdRange" min="50" max="99" step="1" value="80" aria-describedby="thresholdNote">
+          <p class="note" id="thresholdNote">
+            If the top score is below this value, the app reports
+            “Object not confidently recognized”. This is only a basic uncertainty check and
+            <strong>not a reliable unknown-object detector</strong>: a classifier can be highly
+            confident about objects it was never trained on, and can be unsure about objects it knows.
+          </p>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>Predictions run locally in your browser. Selected images and camera frames are not uploaded by this app.</p>
+      <p>Built with TensorFlow.js and Google Teachable Machine. The libraries are loaded from a CDN, so an internet connection is required.</p>
+    </div>
+  </footer>
+
+  <!-- Libraries: this tfjs / Teachable Machine pairing is the one Google's export snippet uses. -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.5/dist/teachablemachine-image.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
